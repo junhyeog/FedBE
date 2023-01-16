@@ -17,7 +17,7 @@ class MLP(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = x.view(-1, x.shape[1]*x.shape[-2]*x.shape[-1])
+        x = x.view(-1, x.shape[1] * x.shape[-2] * x.shape[-1])
         x = self.layer_input(x)
         x = self.dropout(x)
         x = self.relu(x)
@@ -37,7 +37,7 @@ class CNNMnist(nn.Module):
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
         x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, x.shape[1]*x.shape[2]*x.shape[3])
+        x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
         x = F.relu(self.fc1(x))
         x = F.dropout(x, training=self.training)
         x = self.fc2(x)
@@ -51,10 +51,10 @@ class CNNCifar(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, 3)
         self.conv3 = nn.Conv2d(64, 64, 3)
-        
+
         self.hidden = nn.ModuleList()
         for k in range(args.num_layers):
-          self.hidden.append(nn.Conv2d(64, 64, 3, padding=1))
+            self.hidden.append(nn.Conv2d(64, 64, 3, padding=1))
         self.fc1 = nn.Linear(1024, 64)
         self.fc2 = nn.Linear(64, args.num_classes)
 
@@ -65,9 +65,9 @@ class CNNCifar(nn.Module):
         x = self.pool(F.relu(x))
         x = self.conv3(x)
         x = F.relu(x)
-        
+
         for l in self.hidden:
-          x = F.relu(l(x))
+            x = F.relu(l(x))
         x = x.view(-1, 1024)
         x = self.fc1(x)
         x = F.relu(x)

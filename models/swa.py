@@ -96,8 +96,7 @@ class SWA(Optimizer):
             Averaging:
             https://arxiv.org/abs/1806.05594
         """
-        self._auto_mode, (self.swa_start, self.swa_freq) = \
-            self._check_params(self, swa_start, swa_freq)
+        self._auto_mode, (self.swa_start, self.swa_freq) = self._check_params(self, swa_start, swa_freq)
         self.swa_lr = swa_lr
 
         if self._auto_mode:
@@ -107,8 +106,7 @@ class SWA(Optimizer):
                 raise ValueError("Invalid swa_freq: {}".format(swa_freq))
         else:
             if self.swa_lr is not None:
-                warnings.warn(
-                    "Some of swa_start, swa_freq is None, ignoring swa_lr")
+                warnings.warn("Some of swa_start, swa_freq is None, ignoring swa_lr")
             # If not in auto mode make all swa parameters None
             self.swa_lr = None
             self.swa_start = None
@@ -124,16 +122,15 @@ class SWA(Optimizer):
         self.state = defaultdict(dict)
         self.opt_state = self.optimizer.state
         for group in self.param_groups:
-            group['n_avg'] = 0
-            group['step_counter'] = 0
+            group["n_avg"] = 0
+            group["step_counter"] = 0
 
     @staticmethod
     def _check_params(self, swa_start, swa_freq):
         params = [swa_start, swa_freq]
         params_none = [param is None for param in params]
         if not all(params_none) and any(params_none):
-            warnings.warn(
-                "Some of swa_start, swa_freq is None, ignoring other")
+            warnings.warn("Some of swa_start, swa_freq is None, ignoring other")
         for i, param in enumerate(params):
             if param is not None and not isinstance(param, int):
                 params[i] = int(param)
@@ -144,8 +141,8 @@ class SWA(Optimizer):
         if self.swa_lr is None:
             return
         for param_group in self.param_groups:
-            if param_group['step_counter'] >= self.swa_start:
-                param_group['lr'] = self.swa_lr
+            if param_group["step_counter"] >= self.swa_start:
+                param_group["lr"] = self.swa_lr
 
     def update_swa_group(self, group):
         r"""Updates the SWA running averages for the given parameter group.
@@ -168,11 +165,11 @@ class SWA(Optimizer):
             >>>         opt.update_swa_group(opt.param_groups[1])
             >>> opt.swap_swa_sgd()
         """
-        for p in group['params']:
+        for p in group["params"]:
             param_state = self.state[p]
-            if 'swa_buffer' not in param_state:
-                param_state['swa_buffer'] = torch.zeros_like(p.data)
-            buf = param_state['swa_buffer']
+            if "swa_buffer" not in param_state:
+                param_state["swa_buffer"] = torch.zeros_like(p.data)
+            buf = param_state["swa_buffer"]
             virtual_decay = 1 / float(group["n_avg"] + 1)
             diff = (p.data - buf) * virtual_decay
             buf.add_(diff)
@@ -193,14 +190,13 @@ class SWA(Optimizer):
         should be called again.
         """
         for group in self.param_groups:
-            for p in group['params']:
+            for p in group["params"]:
                 param_state = self.state[p]
-                if 'swa_buffer' not in param_state:
+                if "swa_buffer" not in param_state:
                     # If swa wasn't applied we don't swap params
-                    warnings.warn(
-                        "SWA wasn't applied to param {}; skipping it".format(p))
+                    warnings.warn("SWA wasn't applied to param {}; skipping it".format(p))
                     continue
-                buf = param_state['swa_buffer']
+                buf = param_state["swa_buffer"]
                 tmp = torch.empty_like(p.data)
                 tmp.copy_(p.data)
                 p.data.copy_(buf)
@@ -233,12 +229,10 @@ class SWA(Optimizer):
             * param_groups - a dict containing all parameter groups
         """
         opt_state_dict = self.optimizer.state_dict()
-        swa_state = {(id(k) if isinstance(k, torch.Tensor) else k): v
-                     for k, v in self.state.items()}
+        swa_state = {(id(k) if isinstance(k, torch.Tensor) else k): v for k, v in self.state.items()}
         opt_state = opt_state_dict["state"]
         param_groups = opt_state_dict["param_groups"]
-        return {"opt_state": opt_state, "swa_state": swa_state,
-                "param_groups": param_groups}
+        return {"opt_state": opt_state, "swa_state": swa_state, "param_groups": param_groups}
 
     def load_state_dict(self, state_dict):
         r"""Loads the optimizer state.
@@ -247,10 +241,8 @@ class SWA(Optimizer):
             state_dict (dict): SWA optimizer state. Should be an object returned
                 from a call to `state_dict`.
         """
-        swa_state_dict = {"state": state_dict["swa_state"],
-                          "param_groups": state_dict["param_groups"]}
-        opt_state_dict = {"state": state_dict["opt_state"],
-                          "param_groups": state_dict["param_groups"]}
+        swa_state_dict = {"state": state_dict["swa_state"], "param_groups": state_dict["param_groups"]}
+        opt_state_dict = {"state": state_dict["opt_state"], "param_groups": state_dict["param_groups"]}
         super(SWA, self).load_state_dict(swa_state_dict)
         self.optimizer.load_state_dict(opt_state_dict)
         self.opt_state = self.optimizer.state
@@ -266,8 +258,8 @@ class SWA(Optimizer):
             param_group (dict): Specifies what Tensors should be optimized along
             with group specific optimization options.
         """
-        param_group['n_avg'] = 0
-        param_group['step_counter'] = 0
+        param_group["n_avg"] = 0
+        param_group["step_counter"] = 0
         self.optimizer.add_param_group(param_group)
 
     @staticmethod
@@ -305,7 +297,6 @@ class SWA(Optimizer):
             momentum = b / float(n + b)
             for module in momenta.keys():
                 module.momentum = momentum
-
 
             input = input.cuda()
 

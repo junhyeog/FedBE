@@ -6,7 +6,3 @@ python3 main.py --local_ep 20 --rounds 40 --server_ep 20 --update FedAvg --teach
 python3 main.py --local_ep 20 --rounds 40 --server_ep 20 --update dist --teacher_type SWAG --use_SWA --use_client --num_users 10 --model cnn --weight_decay 0.001 --exp fedbe  &
 python3 main.py --local_ep 20 --rounds 40 --server_ep 20 --update dist --teacher_type clients --num_users 10 --model cnn --weight_decay 0.001 --use_client --exp vanilla &
 python3 main.py --local_ep 20 --rounds 40 --server_ep 20 --update FedAvg --teacher_type clients --num_users 10 --model cnn --weight_decay 0.001 --exp fedavg
-
-
-
-
