@@ -115,7 +115,7 @@ if __name__ == "__main__":
     else:
         exit("Error: unrecognized model")
 
-    print(net_glob)
+    # print(net_glob)
     net_glob.train()
 
     # copy weights
@@ -139,12 +139,14 @@ if __name__ == "__main__":
     net_glob.apply(weights_init)
 
     def cliet_train(q, device_id, net_glob, iters, idx, val_id=server_id, generator=None):
-        device = torch.device("cuda:{}".format(device_id) if torch.cuda.is_available() and args.gpu != -1 else "cpu")
+        device = torch.device(
+            "cuda:{}".format(device_id) if torch.cuda.is_available() and args.num_gpu != -1 else "cpu"
+        )
         lr = lr_schedule(args.lr, iters, args.rounds)
 
         if args.local_sch == "adaptive":
             running_ep = adaptive_schedule(args.local_ep, args.epochs, iters, args.adap_ep)
-        if running_ep != args.local_ep:
+            # if running_ep != args.local_ep:
             print("Using adaptive scheduling, local ep = %d." % args.adap_ep)
         else:
             running_ep = args.local_ep
@@ -157,6 +159,7 @@ if __name__ == "__main__":
             server_ids=val_id,
             test=(dataset_test, range(len(dataset_test))),
             num_per_cls=cnts_dict[idx],
+            idx=idx,
         )
 
         teacher = local.train(net=net_glob.to(device), running_ep=running_ep, lr=lr)
@@ -164,23 +167,25 @@ if __name__ == "__main__":
         return [teacher, idx]
 
     def server_train(q, device_id, net_glob, teachers, global_ep, w_org=None, base_teachers=None):
+        # q, args.num_gpu - 1, net_glob, teachers_list, iters
         student = ServerUpdate(
             args=args,
             device=device_id,
-            dataset=dataset_eval,
-            server_dataset=dataset_eval,
+            dataset=dataset_eval,  # train_idx
+            server_dataset=dataset_eval,  # server_idxs
             server_idxs=server_id,
-            train_idx=train_ids,
+            train_idx=train_ids,  # client들의 data 합집합
             test=(dataset_test, range(len(dataset_test))),
-            w_org=w_org,
-            base_teachers=base_teachers,
+            w_org=w_org,  # None
+            base_teachers=base_teachers,  # None
         )
 
         w_swa, w_glob, train_acc, val_acc, test_acc, loss, entropy = student.train(
             net_glob, teachers, args.log_dir, global_ep
         )
 
-        q.put([w_swa, w_glob, train_acc, val_acc, test_acc, entropy])
+        if q is not None:
+            q.put([w_swa, w_glob, train_acc, val_acc, test_acc, entropy])
         return [w_swa, w_glob, train_acc, val_acc, test_acc, entropy]
 
     def test_thread(q, net_glob, dataset, ids):
@@ -284,7 +289,7 @@ if __name__ == "__main__":
     fedavg_logger = logger("FedAvg")
     work_tag = args.update
 
-    teachers = [[] for i in range(args.num_users)]
+    # teachers = [[] for i in range(args.num_users)]
     generator = None
     best_acc = 0.0
 
@@ -325,21 +330,23 @@ if __name__ == "__main__":
                 idx = int(fake_out[-1])
                 clients[idx].append(fake_out[0])
 
-        clients = [c[0] for c in clients if len(c) > 0]
-        client_w = [c.state_dict() for c in clients]
+        # clients: num_users개의 list를 윈소로 가지고 있음, 뽑힌 client에 해당하는 list들에 local train된 model이 들어있음 (net_glob는 그대로)
+        clients = [c[0] for c in clients if len(c) > 0]  # local train된 model들만 모아놓은 list
+        client_w = [c.state_dict() for c in clients]  # w_i
 
         if args.store_model and (iters % args.log_ep == 0 or iters == args.rounds - 1):
             store_model(iters, model_dir, w_glob_org, client_w)
 
+        # size_arr: 각 client의 데이터 개수
         if args.fedM and iters > 1:
             w_glob_avg, momentum = FedAvgM(
                 client_w, args.num_gpu - 1, (w_glob_org, momentum), args.mom, size_arr=size_arr
             )
         else:
-            w_glob_avg = FedAvg(client_w, args.num_gpu - 1, size_arr=size_arr)
-            momentum = {k: w_glob_org[k] - w_glob_avg[k] for k in w_glob_avg.keys()}
+            w_glob_avg = FedAvg(client_w, args.num_gpu - 1, size_arr=size_arr)  # w_bar 계산
+            # momentum = {k: w_glob_org[k] - w_glob_avg[k] for k in w_glob_avg.keys()}
 
-        net_glob.load_state_dict(w_glob_avg)
+        net_glob.load_state_dict(w_glob_avg)  # w_bar를 net_glob로 update
 
         if iters % args.log_ep == 0:
             put_log(fedavg_logger, net_glob, tag="FedAvg", iters=iters)
@@ -350,24 +357,24 @@ if __name__ == "__main__":
 
         if not args.dont_add_fedavg:
             print("add FedAvg to teachers")
-            teachers_list.append(copy.deepcopy(net_glob))  # Add FedAvg
+            teachers_list.append(copy.deepcopy(net_glob))  # Add FedAvg (w_bar)
 
         if args.teacher_type == "SWAG" and iters > args.warmup_ep:
             for i in range(args.num_sample_teacher):
-                base_teachers = client_w
+                base_teachers = client_w  # w_i
                 swag_model = SWAG_server(args, w_glob_org, avg_model=w_glob_avg, concentrate_num=1, size_arr=size_arr)
                 w_swag = swag_model.construct_models(base_teachers, mode=args.sample_teacher)
                 net_glob.load_state_dict(w_swag)
                 teachers_list.append(copy.deepcopy(net_glob))
         else:
-            base_teachers = client_w
+            base_teachers = client_w  # w_i
             print("Warming up, using DIST.")
 
         if args.use_client:
-            teachers_list += clients
+            teachers_list += clients  # w_i
 
         # Load weights for server training
-        net_glob.load_state_dict(w_glob_avg)
+        net_glob.load_state_dict(w_glob_avg)  # w_bar를 net_glob로 update
         print("Initialize with FedAvg for server training ...")
         # update global weights
         q = mp.Manager().Queue()
@@ -380,26 +387,33 @@ if __name__ == "__main__":
         [w_glob_mean, w_glob, ens_train_acc, ens_val_acc, ens_test_acc, entropy] = q.get()
         del q
 
+        # [w_glob_mean, w_glob, ens_train_acc, ens_val_acc, ens_test_acc, entropy] = server_train(
+        #     None, args.num_gpu - 1, net_glob, teachers_list, iters
+        # )
+
         if best_acc < ens_test_acc:
             best_acc = ens_test_acc
-
+        print(f"[+] w_glob_mean == w_glob: (use_SWA: {args.use_SWA})=============")
+        for i, j in zip(w_glob, w_glob_mean):
+            print(i == j)
+        print(f"=================================================================")
         if iters % args.log_ep == 0:
-            net_glob.load_state_dict(w_glob_mean)
+            net_glob.load_state_dict(w_glob_mean)  # SWA O or X
             put_log(dist_logger, net_glob, tag="DIST-SWA", iters=iters)
 
-            net_glob.load_state_dict(w_glob)
+            net_glob.load_state_dict(w_glob)  # SWA X
             put_log(dist_logger, net_glob, tag="DIST", iters=iters)
             put_oracle_log(dist_logger, ens_train_acc, ens_val_acc, ens_test_acc, iters=iters)
 
         if args.update == "FedAvg":
-            net_glob.load_state_dict(w_glob_avg)
+            net_glob.load_state_dict(w_glob_avg)  # w_bar
             print("Sending back FedAvg!")
         else:
             if args.use_SWA:
-                net_glob.load_state_dict(w_glob_mean)
+                net_glob.load_state_dict(w_glob_mean)  # SWA O or X
                 print("Sending back student w/ SWA!")
             else:
-                net_glob.load_state_dict(w_glob)
+                net_glob.load_state_dict(w_glob)  # SWA X
                 print("Sending back student w/o SWA!")
 
         if args.store_model and iters == args.rounds - 1:

@@ -26,7 +26,9 @@ from models.swa import SWA
 
 
 class SWAGLocalUpdate(object):
-    def __init__(self, args, device, dataset=None, idxs=None, server_ids=None, test=(None, None), num_per_cls=None):
+    def __init__(
+        self, args, device, dataset=None, idxs=None, server_ids=None, test=(None, None), num_per_cls=None, idx=None
+    ):
         self.args = args
         self.device = device
         self.num_per_cls = num_per_cls
@@ -39,6 +41,8 @@ class SWAGLocalUpdate(object):
         (self.train_dataset, self.user_train_ids) = (dataset, idxs)
 
         self.server_ids = server_ids
+
+        self.idx = idx
 
     def apply_weight_decay(self, *modules, weight_decay_factor=0.0, wo_bn=True):
         """
@@ -79,10 +83,10 @@ class SWAGLocalUpdate(object):
         if self.args.ens:
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
         epoch_loss = []
-        acc = 0.0
+        # acc = 0.0
 
-        num_model = 0
-        cnt = 0
+        # num_model = 0
+        # cnt = 0
         for iter in range(running_ep):
             batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
@@ -99,9 +103,10 @@ class SWAGLocalUpdate(object):
                 self.apply_weight_decay(net, weight_decay_factor=self.args.weight_decay)
                 optimizer.step()
 
-                if self.args.verbose and batch_idx % 10 == 0:
+                if self.args.verbose and batch_idx + 1 == len(self.ldr_train):  # batch_idx % 100 == 0:
                     print(
-                        "Update Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+                        "[Client {:3d}] Update Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+                            self.idx,
                             iter,
                             batch_idx * len(images),
                             len(self.ldr_train.dataset),
@@ -132,7 +137,6 @@ class ServerUpdate(object):
         w_org=None,
         base_teachers=None,
     ):
-
         self.args = args
         self.device = device
         self.loss_type = args.loss_type
@@ -140,18 +144,18 @@ class ServerUpdate(object):
         self.selected_clients = []
 
         self.server_data_size = len(server_idxs)
-        self.aug = args.aug and args.use_SWA
-        self.ldr_train = DataLoader(DatasetSplit(dataset, server_idxs), batch_size=1024, shuffle=False)
+        self.aug = args.aug and args.use_SWA  # transform_train 수행 (why??)
+        self.ldr_train = DataLoader(DatasetSplit(dataset, server_idxs), batch_size=1024, shuffle=False)  # dataset_eval
         self.ldr_local_train = DataLoader(
             DatasetSplit(dataset, train_idx), batch_size=self.args.server_bs, shuffle=False
-        )
+        )  # dataset_eval, client들의 data 합집합
         self.test_dataset = DataLoader(test[0], batch_size=self.args.server_bs, shuffle=False)
         self.aum_dir = os.path.join(self.args.log_dir, "aum")
 
-        server_train_dataset = DataLoader(
-            DatasetSplit(server_dataset, server_idxs), batch_size=self.args.server_bs, shuffle=False
-        )
-        self.server_train_dataset = [images for images, labels in server_train_dataset]
+        # server_train_dataset = DataLoader(
+        #     DatasetSplit(server_dataset, server_idxs), batch_size=self.args.server_bs, shuffle=False
+        # ) # dataset_eval
+        # self.server_train_dataset = [images for images, labels in server_train_dataset]
 
         self.w_org = w_org
         self.base_teachers = base_teachers
@@ -167,13 +171,15 @@ class ServerUpdate(object):
     def get_ensemble_logits(self, teachers, inputs, method="mean", global_ep=1000):
         logits = np.zeros((len(teachers), len(inputs), self.args.num_classes))
         for i, t_net in enumerate(teachers):
-            logit = get_input_logits(inputs, t_net.cuda(), is_logit=self.args.is_logit)  # Disable res
+            logit = get_input_logits(
+                inputs, t_net.cuda(), is_logit=self.args.is_logit
+            )  # Disable res # w_i로 infer (is_logit이면 prob(softmax), 아니면 logit 그대로)
             logits[i] = logit
 
-        logits = np.transpose(logits, (1, 0, 2))  # batchsize, teachers, 10
+        logits = np.transpose(logits, (1, 0, 2))  # batchsize, teachers, num_classes
         logits_arr, logits_cond = merge_logits(
             logits, method, self.args.loss_type, temp=self.args.temp, global_ep=global_ep
-        )
+        )  # p_hat
         batch_entropy = get_entropy(logits.reshape((-1, self.args.num_classes)))
         return logits_arr, batch_entropy
 
@@ -216,9 +222,11 @@ class ServerUpdate(object):
             cnt = len(labels)
             logits = torch.Tensor(logits).cuda(non_blocking=True)
 
+        # ==> CE & !vote: logits=argmax(logits) [N] / 아니면: logits=logits [N, num_classes]
+
         # For loss function
-        if self.args.use_oracle:
-            loss = nn.CrossEntropyLoss()(log_probs, torch.Tensor(labels).long().cuda())
+        if self.args.use_oracle:  # TODO: ??
+            loss = nn.CrossEntropyLoss()(log_probs, torch.Tensor(labels).long().cuda())  # [N, num_classes] (softmax X)
         else:
             if "KL" in self.loss_type:
                 log_probs = F.softmax(log_probs, dim=-1)
@@ -230,7 +238,7 @@ class ServerUpdate(object):
                     Q = log_probs
 
                 one_vec = P * (P.log() - torch.Tensor([0.1]).cuda(non_blocking=True).log())
-                loss = (P * (P.log() - Q.log())).mean()
+                loss = (P * (P.log() - Q.log())).mean()  # KL loss
             else:
                 loss = self.loss_func(log_probs, logits)
 
@@ -274,7 +282,7 @@ class ServerUpdate(object):
             all_labels[cnt : cnt + len(images)] = labels.numpy()
             cnt += len(images)
 
-        ldr_train = (all_images, all_logits, all_labels)
+        ldr_train = (all_images, all_logits, all_labels)  # ensemble된 logits
         # =============================
         # If args.soft_vote = True:
         #    soft_vote from experts
@@ -284,6 +292,7 @@ class ServerUpdate(object):
         if not probe:
             return ldr_train, 0.0, 0.0
         else:
+            # enseumble된 logits의 accuracy
             test_acc = self.eval_ensemble(teachers, self.test_dataset)
             train_acc = self.eval_ensemble(teachers, self.ldr_local_train)
 
@@ -302,9 +311,15 @@ class ServerUpdate(object):
             return ldr_train, train_acc, test_acc
 
     def set_opt(self, net):
+        """Set (SWA) optimizer for training server
+
+        Args:
+            net (nn.Module): network to be trained
+        """
         base_opt = torch.optim.SGD(net.parameters(), lr=1e-3, momentum=0.9, weight_decay=0.00001)
         if self.args.use_SWA:
-            self.optimizer = SWA(base_opt, swa_start=500, swa_freq=25, swa_lr=None)
+            # self.optimizer = SWA(base_opt, swa_start=500, swa_freq=25, swa_lr=None)
+            self.optimizer = SWA(base_opt, swa_start=0, swa_freq=25, swa_lr=None)  #! TODO: for test
         else:
             self.optimizer = base_opt
 
@@ -316,11 +331,11 @@ class ServerUpdate(object):
         ldr_train = []
         ldr_train, train_acc, test_acc = self.record_teacher(
             ldr_train, net, teachers, global_ep, log_dir, probe=to_probe
-        )
-        (all_images, all_logits, all_labels) = ldr_train
+        )  # teachers: teacher_list (teacher 합집합)
+        (all_images, all_logits, all_labels) = ldr_train  # [N, C, H, W], [N, num_classes], [N]
         # ======================Server Train========================
         print("Start server training...")
-        net.cuda()
+        net.cuda()  # net_glob
         net.train()
 
         epoch_loss = []
@@ -342,11 +357,11 @@ class ServerUpdate(object):
                     images = self.transform_train(images)
                 else:
                     images = torch.Tensor(images).cuda()
-                logits = all_logits[ids]
+                logits = all_logits[ids]  # ensemble된 logits
                 labels = all_labels[ids]
 
                 net.zero_grad()
-                log_probs = net(images)
+                log_probs = net(images)  # net_glob의 logits (softmax X)
 
                 loss, acc_cnt_i, cnt_i = self.loss_wrapper(log_probs, logits, labels)
                 acc += acc_cnt_i
@@ -369,7 +384,6 @@ class ServerUpdate(object):
                 batch_loss.append(loss.item())
 
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
-
         val_acc = float(acc) / cnt * 100.0
         net_glob = copy.deepcopy(net)
 
@@ -379,8 +393,8 @@ class ServerUpdate(object):
                 self.optimizer.bn_update(self.ldr_train, net, device=None)
 
         net = net.cpu()
-        w_glob_avg = copy.deepcopy(net.state_dict())
-        w_glob = net_glob.cpu().state_dict()
+        w_glob_avg = copy.deepcopy(net.state_dict())  # swap_swa_sgd O or X
+        w_glob = net_glob.cpu().state_dict()  # swap_swa_sgd X
 
         print("Ensemble Acc Train %.2f Val %.2f Test %.2f mean entropy %.5f" % (train_acc, val_acc, test_acc, 0.0))
         return w_glob_avg, w_glob, train_acc, val_acc, test_acc, sum(epoch_loss) / len(epoch_loss), 0.0

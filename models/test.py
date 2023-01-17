@@ -40,7 +40,7 @@ def test_img(net_g, datatest, args, idxs, reweight=None, cls_num=10):
     net_g = net_g.cuda()
     with torch.no_grad():
         for idx, (data, target) in enumerate(data_loader):
-            if args.gpu != -1:
+            if args.num_gpu != -1:
                 data, target = data.cuda(), target.cuda()
             log_probs = net_g(data)
             # sum up batch loss

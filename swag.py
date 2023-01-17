@@ -102,7 +102,7 @@ class SWAG_server(torch.nn.Module):
         return w_avg, w_sq_avg, w_norm
 
     def construct_models(self, teachers, mean=None, mode="dir"):
-        if mode == "gaussian":
+        if mode == "gaussian": # TODO ??
             w_avg, w_sq_avg, w_norm = self.compute_mean_sq(teachers)
             w_var = self.compute_var(w_avg, w_sq_avg)
 
@@ -120,7 +120,7 @@ class SWAG_server(torch.nn.Module):
                 mean_grad[k] = mean_grad[k] * self.args.swag_stepsize * w_norm[k] + self.base_model[k].cpu()
             return mean_grad
 
-        elif mode == "random":
+        elif mode == "random":  # w_i 중에서 random하게 num_t개를 뽑아서 평균
             num_t = 3
             ts = np.random.choice(teachers, num_t, replace=False)
             mean_grad = {}
@@ -134,7 +134,7 @@ class SWAG_server(torch.nn.Module):
 
             return mean_grad
 
-        elif mode == "dir":
+        elif mode == "dir":  # 모든 w_i에 대해서 dirichlet로 가중치 합
             proportions = np.random.dirichlet(np.repeat(self.args.alpha, len(teachers)))
             mean_grad = {}
             for k in teachers[0].keys():

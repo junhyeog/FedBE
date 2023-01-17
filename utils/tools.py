@@ -111,7 +111,7 @@ def merge_logits(logits, method, loss_type, temp=0.3, global_ep=1000):
             logits_cond = np.max(logits_arr, axis=-1)
         else:
             logits_arr = logits
-            logits_cond = softmax(logits, axis=-1)
+            logits_cond = F.softmax(logits, axis=-1)
             logits_cond = np.max(logits_cond, axis=-1)
 
     return logits_arr, logits_cond

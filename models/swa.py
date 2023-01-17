@@ -118,7 +118,9 @@ class SWA(Optimizer):
         self.optimizer = optimizer
 
         self.defaults = self.optimizer.defaults
+        # list of dicts : dict_keys(['params', 'lr', 'momentum', 'dampening', 'weight_decay', 'nesterov', 'maximize', 'foreach', 'differentiable', 'n_avg', 'step_counter'])
         self.param_groups = self.optimizer.param_groups
+
         self.state = defaultdict(dict)
         self.opt_state = self.optimizer.state
         for group in self.param_groups:

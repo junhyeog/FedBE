@@ -99,6 +99,11 @@ def args_parser():
     parser.add_argument("--num_gpu", type=int, default=1, help="GPU ID, -1 for CPU")
     parser.add_argument("--verbose", action="store_true", help="verbose print")
     parser.add_argument("--seed", type=int, default=1, help="random seed (default: 1)")
+
+    parser.add_argument("--logit_method", type=str, default="mean", help="mean, vote")
+    parser.add_argument("--is_logit", action="store_false", help="False: use prob, True: use logit when ensemble")
+    parser.add_argument("--soft_vote", action="store_true", help="??")
+
     args = parser.parse_args()
 
     if args.update == "FedAvg":
